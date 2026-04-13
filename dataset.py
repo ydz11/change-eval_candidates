@@ -4,17 +4,10 @@ from torch.utils.data import Dataset
 
 
 class RatingTrainDataset(Dataset):
-    """Training dataset using ALL observed ratings directly.
-
-    For explicit feedback, positives are high-rated items and negatives
-    are low-rated items — both come from actual interactions in the
-    training set. No random negative sampling is needed.
-    """
-
     def __init__(self, train_df):
+        train_df = train_df[train_df["rating"] >= 4]
         self.users = train_df["user_id"].values.astype(np.int64)
         self.items = train_df["item_id"].values.astype(np.int64)
-        self.ratings = train_df["rating"].values.astype(np.float32)
 
     def __len__(self):
         return len(self.users)

@@ -62,7 +62,7 @@ MIN_ITEM_INTERACTIONS = 5
 # =============================================================
 GRID = {
     "factor":         [16, 32, 64],
-    "lr":             [1e-3],
+    "lr":             [1e-4, 1e-3],
     "weight_decay":   [1e-5],
     "dropout":        [0.2],
     "sasrec_num_neg": [1],
@@ -376,11 +376,14 @@ def main():
 
     # Build summary grouped by factor for plotting
     all_results = {}
-    for name, best in best_per_model.items():
-        f = best["factor"]
+    for row in all_tuning_results:
+        f = row["factor"]
+        name = row["model"]
         if f not in all_results:
             all_results[f] = {}
-        all_results[f][name] = {"hr": best["test_hr"], "ndcg": best["test_ndcg"]}
+        # 只保留每个factor+model组合的最好valid_ndcg
+        if name not in all_results[f] or row["valid_ndcg"] > all_results[f][name]["ndcg"]:
+            all_results[f][name] = {"hr": row["test_hr"], "ndcg": row["test_ndcg"]}
 
     with open(OUTPUT_DIR / "results_by_factor.json", "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2)
