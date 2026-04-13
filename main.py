@@ -201,6 +201,18 @@ def main():
     train_df, valid_df, test_df = ratio_split(df)
     print(f"Split: #train={len(train_df)}, #valid={len(valid_df)}, #test={len(test_df)}")
 
+    # 构建全局neg pool：整个df里rating<4的item
+    neg_pool_df = df[df["rating"] < 4]
+
+    valid_ui = build_ui(valid_df)
+    test_ui = build_ui(test_df)
+
+    valid_users, valid_candidates = build_eval_candidates(
+        valid_ui[:, :2], neg_pool_df, num_neg=NUM_NEG_EVAL, seed=42
+    )
+    test_users, test_candidates = build_eval_candidates(
+        test_ui[:, :2], neg_pool_df, num_neg=NUM_NEG_EVAL, seed=43
+    )
     # ===========================================================
     # 6. Prepare data structures
     # ===========================================================
