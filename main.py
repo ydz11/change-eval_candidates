@@ -40,7 +40,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NEIGHBOR_K = 5
 
 TRAIN_BATCH_SIZE = 256
-TRAIN_EPOCHS = 40
+TRAIN_EPOCHS = 20
 LR = 1e-3
 WEIGHT_DECAY = 1e-5
 PATIENCE = 5
@@ -62,8 +62,8 @@ MIN_ITEM_INTERACTIONS = 5
 # =============================================================
 GRID = {
     "factor":         [16, 32, 64],
-    "lr":             [1e-4, 1e-3],
-    "weight_decay":   [1e-5],
+    "lr":             [1e-3],
+    "weight_decay":   [1e-5, 1e-4],
     "dropout":        [0.2],
     "sasrec_num_neg": [1],
 }
@@ -74,7 +74,7 @@ GRID = {
 # =============================================================
 
 def train_rating_model(model, train_dataset, valid_users, valid_candidates,
-                       valid_ratings, model_name, lr=LR, weight_decay=WEIGHT_DECAY):
+                       model_name, lr=LR, weight_decay=WEIGHT_DECAY):
     model = model.to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = torch.nn.MSELoss()
@@ -103,7 +103,7 @@ def train_rating_model(model, train_dataset, valid_users, valid_candidates,
 
             epoch_losses.append(loss.item())
 
-        hr, ndcg = evaluate_model(model, valid_users, valid_candidates, valid_ratings, TOP_K, DEVICE)
+        hr, ndcg = evaluate_model(model, valid_users, valid_candidates, TOP_K, DEVICE)
         avg_loss = float(np.mean(epoch_losses))
 
         print(f"[{model_name}] epoch={epoch:02d}, "
@@ -232,13 +232,13 @@ def main():
     # Negatives = items user rated < threshold in TRAINING set
     # (no data leakage: only training ratings used for negatives)
     # ===========================================================
-    valid_uir = valid_df[["user_id", "item_id", "rating"]].to_numpy(dtype=np.float64)
-    test_uir = test_df[["user_id", "item_id", "rating"]].to_numpy(dtype=np.float64)
+    valid_uir = valid_df[["user_id", "item_id"]].to_numpy(dtype=np.float64)
+    test_uir = test_df[["user_id", "item_id"]].to_numpy(dtype=np.float64)
 
-    valid_users, valid_candidates, valid_ratings = build_eval_candidates(
+    valid_users, valid_candidates = build_eval_candidates(
         valid_uir, train_df, num_neg=NUM_NEG_EVAL, seed=42
     )
-    test_users, test_candidates, test_ratings = build_eval_candidates(
+    test_users, test_candidates = build_eval_candidates(
         test_uir, train_df, num_neg=NUM_NEG_EVAL, seed=43
     )
     print(f"Eval users: valid={len(set(valid_users.tolist()))}, "
@@ -329,7 +329,6 @@ def main():
                 train_dataset=train_dataset,
                 valid_users=valid_users,
                 valid_candidates=valid_candidates,
-                valid_ratings=valid_ratings,
                 model_name=f"{name}-cfg{config_idx}",
                 lr=lr,
                 weight_decay=weight_decay,
@@ -337,10 +336,10 @@ def main():
 
             # --- Evaluate on validation and test ---
             valid_hr, valid_ndcg = evaluate_model(trained_model, valid_users,
-                                                  valid_candidates, valid_ratings,
+                                                  valid_candidates,
                                                   TOP_K, DEVICE)
             test_hr, test_ndcg = evaluate_model(trained_model, test_users,
-                                                test_candidates, test_ratings,
+                                                test_candidates,
                                                 TOP_K, DEVICE)
 
             result_row = {
