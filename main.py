@@ -224,7 +224,7 @@ def main():
         n_users=n_users,
         n_items=n_items,
         k=NEIGHBOR_K,
-        sim_threshold=0.0,
+        sim_threshold=-1.0,
     )
 
     # ===========================================================

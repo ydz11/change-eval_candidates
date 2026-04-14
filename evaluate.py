@@ -82,13 +82,16 @@ def evaluate_model(model, eval_users, eval_candidates, eval_ratings,
             row_ratings = act_ratings[b]
             pos_item = items[b][0].item()
 
+            binary_rel = np.zeros(len(row_scores), dtype=np.float64)
+            binary_rel[0] = 1.0
+
             # Real Rank: 按 actual ratings 从高到低排序
             real_rank_order = np.argsort(-row_ratings)
-            real_rank_relevances = row_ratings[real_rank_order]
+            real_rank_relevances = binary_rel[real_rank_order]
 
             # Predict Rank: 按 predicted scores 从高到低排序
             predict_rank_order = np.argsort(-row_scores)
-            predict_rank_relevances = row_ratings[predict_rank_order]
+            predict_rank_relevances = binary_rel[predict_rank_order]
             predicted_items = items[b].numpy()[predict_rank_order]
 
             # NDCG(real_rank, predict_rank, k)
