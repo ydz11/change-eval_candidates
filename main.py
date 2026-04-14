@@ -74,7 +74,7 @@ GRID = {
 # =============================================================
 
 def train_rating_model(model, train_dataset, valid_users, valid_candidates,
-                       model_name, lr=LR, weight_decay=WEIGHT_DECAY):
+                       valid_ratings, model_name, lr=LR, weight_decay=WEIGHT_DECAY):
     model = model.to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = torch.nn.MSELoss()
@@ -103,7 +103,7 @@ def train_rating_model(model, train_dataset, valid_users, valid_candidates,
 
             epoch_losses.append(loss.item())
 
-        hr, ndcg = evaluate_model(model, valid_users, valid_candidates, TOP_K, DEVICE)
+        hr, ndcg = evaluate_model(model, valid_users, valid_candidates, valid_ratings, TOP_K, DEVICE)
         avg_loss = float(np.mean(epoch_losses))
 
         print(f"[{model_name}] epoch={epoch:02d}, "
@@ -201,18 +201,6 @@ def main():
     train_df, valid_df, test_df = ratio_split(df)
     print(f"Split: #train={len(train_df)}, #valid={len(valid_df)}, #test={len(test_df)}")
 
-    # 构建全局neg pool：整个df里rating<4的item
-    neg_pool_df = df[df["rating"] < 4]
-
-    valid_ui = build_ui(valid_df)
-    test_ui = build_ui(test_df)
-
-    valid_users, valid_candidates = build_eval_candidates(
-        valid_ui[:, :2], neg_pool_df, num_neg=NUM_NEG_EVAL, seed=42
-    )
-    test_users, test_candidates = build_eval_candidates(
-        test_ui[:, :2], neg_pool_df, num_neg=NUM_NEG_EVAL, seed=43
-    )
     # ===========================================================
     # 6. Prepare data structures
     # ===========================================================
@@ -244,16 +232,17 @@ def main():
     # Negatives = items user rated < threshold in TRAINING set
     # (no data leakage: only training ratings used for negatives)
     # ===========================================================
-    valid_ui = build_ui(valid_df)
-    test_ui  = build_ui(test_df)
+    valid_uir = valid_df[["user_id", "item_id", "rating"]].to_numpy(dtype=np.float64)
+    test_uir = test_df[["user_id", "item_id", "rating"]].to_numpy(dtype=np.float64)
 
-    valid_users, valid_candidates = build_eval_candidates(
-        valid_ui[:, :2], train_df, num_neg=NUM_NEG_EVAL, seed=42
+    valid_users, valid_candidates, valid_ratings = build_eval_candidates(
+        valid_uir, train_df, num_neg=NUM_NEG_EVAL, seed=42
     )
-    test_users, test_candidates = build_eval_candidates(
-        test_ui[:, :2], train_df, num_neg=NUM_NEG_EVAL, seed=43
+    test_users, test_candidates, test_ratings = build_eval_candidates(
+        test_uir, train_df, num_neg=NUM_NEG_EVAL, seed=43
     )
-    print(f"Eval users: valid={len(set(valid_users.tolist()))}, test={len(set(test_users.tolist()))}")
+    print(f"Eval users: valid={len(set(valid_users.tolist()))}, "
+          f"test={len(set(test_users.tolist()))}")
 
     # ===========================================================
     # GridSearch over all hyperparameters
@@ -340,18 +329,19 @@ def main():
                 train_dataset=train_dataset,
                 valid_users=valid_users,
                 valid_candidates=valid_candidates,
+                valid_ratings=valid_ratings,
                 model_name=f"{name}-cfg{config_idx}",
                 lr=lr,
                 weight_decay=weight_decay,
             )
 
             # --- Evaluate on validation and test ---
-            valid_hr, valid_ndcg = evaluate_model(
-                trained_model, valid_users, valid_candidates, TOP_K, DEVICE
-            )
-            test_hr, test_ndcg = evaluate_model(
-                trained_model, test_users, test_candidates, TOP_K, DEVICE
-            )
+            valid_hr, valid_ndcg = evaluate_model(trained_model, valid_users,
+                                                  valid_candidates, valid_ratings,
+                                                  TOP_K, DEVICE)
+            test_hr, test_ndcg = evaluate_model(trained_model, test_users,
+                                                test_candidates, test_ratings,
+                                                TOP_K, DEVICE)
 
             result_row = {
                 "config_idx": config_idx,
@@ -393,12 +383,11 @@ def main():
         name = row["model"]
         if f not in all_results:
             all_results[f] = {}
-        # 只保留每个factor+model组合的最好valid_ndcg
         if name not in all_results[f] or row["valid_ndcg"] > all_results[f][name]["ndcg"]:
             all_results[f][name] = {"hr": row["test_hr"], "ndcg": row["test_ndcg"]}
 
-    with open(OUTPUT_DIR / "results_by_factor.json", "w", encoding="utf-8") as f:
-        json.dump(all_results, f, indent=2)
+    with open(OUTPUT_DIR / "results_by_factor.json", "w", encoding="utf-8") as fp:
+        json.dump(all_results, fp, indent=2)
 
     if all_results:
         plot_results(all_results, OUTPUT_DIR)

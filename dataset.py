@@ -5,28 +5,21 @@ from torch.utils.data import Dataset
 
 class RatingTrainDataset(Dataset):
     def __init__(self, train_df):
-        train_df = train_df[train_df["rating"] >= 4]
-        self.users = train_df["user_id"].values.astype(np.int64)
-        self.items = train_df["item_id"].values.astype(np.int64)
+        self.users   = train_df["user_id"].values.astype(np.int64)
+        self.items   = train_df["item_id"].values.astype(np.int64)
+        self.ratings = train_df["rating"].values.astype(np.float32)
 
     def __len__(self):
         return len(self.users)
 
     def __getitem__(self, idx):
         return (
-            torch.tensor(self.users[idx], dtype=torch.long),
-            torch.tensor(self.items[idx], dtype=torch.long),
+            torch.tensor(self.users[idx],   dtype=torch.long),
+            torch.tensor(self.items[idx],   dtype=torch.long),
             torch.tensor(self.ratings[idx], dtype=torch.float32),
         )
 
-
 class SasRecTrainDataset(Dataset):
-    """SASRec pretraining dataset with next-item prediction.
-
-    SASRec uses random negative sampling for its BPR-style loss,
-    which is separate from the rating regression training.
-    """
-
     def __init__(self, user_history, n_users, n_items,
                  max_len=50, sasrec_num_neg=1, seed=42):
         self.user_history = user_history

@@ -6,12 +6,12 @@ class SASRecNCF(nn.Module):
     def __init__(self, user_emb, item_emb, hidden_dims, freeze_pretrained=False):
         super().__init__()
 
-        n_users, emb_dim = user_emb.shape
-        n_items, _ = item_emb.shape
+        n_users_plus1, emb_dim = user_emb.shape
+        n_items_plus1, _ = item_emb.shape
 
         # --- Bug 3 fix: add padding_idx=0 to match SASRec pretraining ---
-        self.user_embedding = nn.Embedding(n_users, emb_dim, padding_idx=0)
-        self.item_embedding = nn.Embedding(n_items, emb_dim, padding_idx=0)
+        self.user_embedding = nn.Embedding(n_users_plus1, emb_dim, padding_idx=0)
+        self.item_embedding = nn.Embedding(n_items_plus1, emb_dim, padding_idx=0)
 
         self.user_embedding.weight.data.copy_(user_emb)
         self.item_embedding.weight.data.copy_(item_emb)
