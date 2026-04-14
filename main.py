@@ -40,7 +40,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NEIGHBOR_K = 5
 
 TRAIN_BATCH_SIZE = 256
-TRAIN_EPOCHS = 20
+TRAIN_EPOCHS = 40
 LR = 1e-3
 WEIGHT_DECAY = 1e-5
 PATIENCE = 5
