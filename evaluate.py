@@ -29,6 +29,7 @@ def build_eval_candidates(eval_user_item_pairs, train_df, num_neg=100, seed=42):
     candidates = np.zeros((len(users), 1 + num_neg), dtype=np.int64)
     candidates[:, 0] = pos_items
 
+    leak_count = 0
     for idx, (u, pos_i) in enumerate(zip(users.tolist(), pos_items.tolist())):
         pool = np.array(user_neg_pool[u], dtype=np.int64)
         if len(pool) == 0:
@@ -36,6 +37,7 @@ def build_eval_candidates(eval_user_item_pairs, train_df, num_neg=100, seed=42):
         sampled = rng.choice(pool, size=num_neg, replace=(len(pool) < num_neg))
         candidates[idx, 1:] = sampled
 
+    print(f"[Debug] Positive items in negative pool: {leak_count}/{len(users)}")
     return users, candidates
 
 
@@ -82,5 +84,11 @@ def evaluate_model(model, eval_users, eval_candidates, k, device, batch_size=409
 
     avg_hr = float(np.mean([np.mean(v) for v in user_hits.values()]))
     avg_ndcg = float(np.mean([np.mean(v) for v in user_ndcgs.values()]))
+
+    # 调试：打印第一个用户的预测分数
+    if not hasattr(evaluate_model, "debug_done"):
+        print(f"[Debug] First user scores: {scores[0][:10]}")
+        print(f"[Debug] Positive item position: {np.where(items[0].numpy() == items[0, 0].item())}")
+        evaluate_model.debug_done = True
 
     return avg_hr, avg_ndcg

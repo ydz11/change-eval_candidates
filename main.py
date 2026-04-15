@@ -40,13 +40,13 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NEIGHBOR_K = 5
 
 TRAIN_BATCH_SIZE = 256
-TRAIN_EPOCHS = 20
+TRAIN_EPOCHS = 40
 LR = 1e-3
 WEIGHT_DECAY = 1e-5
-PATIENCE = 5
+PATIENCE = 10
 
 SASREC_MAXLEN = 50
-SASREC_EPOCHS = 20
+SASREC_EPOCHS = 40
 SASREC_BATCH_SIZE = 128
 
 TOP_K = 10
@@ -63,8 +63,8 @@ MIN_ITEM_INTERACTIONS = 5
 GRID = {
     "factor":         [16, 32, 64],
     "lr":             [1e-3],
-    "weight_decay":   [1e-5, 1e-4],
-    "dropout":        [0.2],
+    "weight_decay":   [1e-5],
+    "dropout":        [0.2, 0.5],
     "sasrec_num_neg": [1],
 }
 
@@ -128,7 +128,6 @@ def train_rating_model(model, train_dataset, valid_users, valid_candidates,
 # =============================================================
 # Plotting
 # =============================================================
-
 def plot_results(results, save_dir):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -167,6 +166,7 @@ def plot_results(results, save_dir):
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Using device: {DEVICE}")
 
     # ===========================================================
     # 1. Load data
@@ -396,7 +396,6 @@ def main():
     for name, best in best_per_model.items():
         print(f"  {name}: valid_ndcg={best['valid_ndcg']:.4f}, "
               f"test_ndcg={best['test_ndcg']:.4f}, config={best}")
-
 
 if __name__ == "__main__":
     main()

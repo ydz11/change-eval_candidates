@@ -10,7 +10,7 @@ def build_rating_matrix(train_uir, n_users, n_items):
     return csr_matrix((vals, (rows, cols)), shape=(n_users, n_items))
 
 
-def build_neighbor_dicts(train_uir, n_users, n_items, k=5, sim_threshold=0.0):
+def build_neighbor_dicts(train_uir, n_users, n_items, k=5, sim_threshold=-1.0):
     R = build_rating_matrix(train_uir, n_users, n_items)
 
     user_sim = cosine_similarity(R)
@@ -44,5 +44,9 @@ def build_neighbor_dicts(train_uir, n_users, n_items, k=5, sim_threshold=0.0):
           f"min={np.min(user_counts)}, max={np.max(user_counts)}")
     print(f"[Neighbors] item avg={np.mean(item_counts):.1f}, "
           f"min={np.min(item_counts)}, max={np.max(item_counts)}")
+
+    # 添加调试：检查邻居相似度
+    print(f"[Debug] User 1 neighbors: {user_neighbors.get(1, [])}")
+    print(f"[Debug] User 1 sim scores: {user_sim[0][:10]}")  # 前10个相似度
 
     return user_neighbors, item_neighbors
