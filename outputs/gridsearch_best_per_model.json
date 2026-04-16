@@ -1,0 +1,54 @@
+{
+  "MF": {
+    "config_idx": 1,
+    "model": "MF",
+    "factor": 16,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "dropout": 0.2,
+    "sasrec_num_neg": 1,
+    "valid_hr": 0.3528383404810997,
+    "valid_ndcg": 0.27362701094828434,
+    "test_hr": 0.34270360878316414,
+    "test_ndcg": 0.2646798073508005
+  },
+  "NCF": {
+    "config_idx": 1,
+    "model": "NCF",
+    "factor": 16,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "dropout": 0.2,
+    "sasrec_num_neg": 1,
+    "valid_hr": 0.34487196447141427,
+    "valid_ndcg": 0.26356242474218844,
+    "test_hr": 0.33418948660908304,
+    "test_ndcg": 0.25592828992828726
+  },
+  "SASRec-NCF": {
+    "config_idx": 1,
+    "model": "SASRec-NCF",
+    "factor": 16,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "dropout": 0.2,
+    "sasrec_num_neg": 1,
+    "valid_hr": 0.3488673257113333,
+    "valid_ndcg": 0.2715086981286553,
+    "test_hr": 0.33411948763482263,
+    "test_ndcg": 0.25877577870797636
+  },
+  "NeighborAware": {
+    "config_idx": 1,
+    "model": "NeighborAware",
+    "factor": 16,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "dropout": 0.2,
+    "sasrec_num_neg": 1,
+    "valid_hr": 0.2641283709135157,
+    "valid_ndcg": 0.19760128960056328,
+    "test_hr": 0.2594443356998148,
+    "test_ndcg": 0.193182170882412
+  }
+}

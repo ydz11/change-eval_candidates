@@ -10,6 +10,9 @@ class NeighborAware(nn.Module):
         self.k = k
         emb_dim = user_emb.shape[1]
 
+        # 添加调试标志
+        self.debug_done = False
+
         self.user_emb = nn.Embedding.from_pretrained(
             user_emb, freeze=freeze_pretrained, padding_idx=0
         )
@@ -30,65 +33,65 @@ class NeighborAware(nn.Module):
         self.register_buffer("user_topk_buf", user_topk)
         self.register_buffer("item_topk_buf", item_topk)
 
-        # Self-attention for neighbor aggregation (Set-based, Order-invariant)
-        self.user_attn = nn.MultiheadAttention(
-            emb_dim, num_heads=1, dropout=dropout, batch_first=True
-        )
-        self.item_attn = nn.MultiheadAttention(
-            emb_dim, num_heads=1, dropout=dropout, batch_first=True
-        )
-
         # MLP input: [u_context(emb_dim), i_context(emb_dim)] = 2*emb_dim
-        # 维度固定，不随k增大
-        mlp_input_dim = 2 * emb_dim
+        mlp_input_dim = 2 * (k + 1) * emb_dim
 
         self.mlp = nn.Sequential(
-            nn.Linear(mlp_input_dim, mlp_input_dim // 2),
+            nn.Linear(mlp_input_dim, mlp_input_dim * 2 // 3),  # 384 → 256
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(mlp_input_dim // 2, mlp_input_dim // 4),
+            nn.Linear(mlp_input_dim * 2 // 3, mlp_input_dim // 3),  # 256 → 128
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(mlp_input_dim // 4, 1),
+            nn.Linear(mlp_input_dim // 3, mlp_input_dim // 6),  # 128 → 64
+            nn.ReLU(),
+            nn.Dropout(dropout),
         )
 
+        # separate prediction layer
+        self.predict_layer = nn.Linear(mlp_input_dim // 6, 1)
+
+        # Add the bias item (required for score prediction)
+        self.user_bias = nn.Embedding(n_users + 1, 1, padding_idx=0)
+        self.item_bias = nn.Embedding(n_items + 1, 1, padding_idx=0)
+        nn.init.zeros_(self.user_bias.weight)
+        nn.init.zeros_(self.item_bias.weight)
+
     def forward(self, user, item):
-        u_target = self.user_emb(user)  # [batch, emb_dim]
-        i_target = self.item_emb(item)  # [batch, emb_dim]
+        # Target embeddings
+        u_target = self.user_emb(user)  # [batch, d]
+        i_target = self.item_emb(item)  # [batch, d]
 
+        # Neighbor embeddings
         u_nei_ids = self.user_topk_buf[user]  # [batch, k]
-        u_nei_emb = self.user_emb(u_nei_ids)  # [batch, k, emb_dim]
+        u_nei_emb = self.user_emb(u_nei_ids)  # [batch, k, d]
+
         i_nei_ids = self.item_topk_buf[item]  # [batch, k]
-        i_nei_emb = self.item_emb(i_nei_ids)  # [batch, k, emb_dim]
+        i_nei_emb = self.item_emb(i_nei_ids)  # [batch, k, d]
 
-        # Set-based self-attention: [target | neighbors] → context-aware representation
-        # target作为第一个token，邻居作为后续tokens
-        u_seq = torch.cat([u_target.unsqueeze(1), u_nei_emb], dim=1)  # [batch, 1+k, emb_dim]
-        i_seq = torch.cat([i_target.unsqueeze(1), i_nei_emb], dim=1)  # [batch, 1+k, emb_dim]
+        # Masked mean: average only non-padding neighbors
+        u_mask = u_nei_ids.eq(0).unsqueeze(-1)
+        u_nei_emb = u_nei_emb.masked_fill(u_mask, 0.0)
 
-        # Padding mask: target不mask，邻居padding位置mask
-        u_pad = torch.cat([
-            torch.zeros(u_nei_ids.size(0), 1, dtype=torch.bool, device=user.device),
-            u_nei_ids.eq(0)
-        ], dim=1)  # [batch, 1+k]
-        i_pad = torch.cat([
-            torch.zeros(i_nei_ids.size(0), 1, dtype=torch.bool, device=item.device),
-            i_nei_ids.eq(0)
-        ], dim=1)  # [batch, 1+k]
+        i_mask = i_nei_ids.eq(0).unsqueeze(-1)
+        i_nei_emb = i_nei_emb.masked_fill(i_mask, 0.0)
 
-        # Self-attention (Set-based, Order-invariant)
-        u_out, _ = self.user_attn(
-            query=u_seq, key=u_seq, value=u_seq,
-            key_padding_mask=u_pad,
-        )  # [batch, 1+k, emb_dim]
-        u_context = u_out[:, 0, :]  # 取target位置的输出作为context-aware representation
+        # Concatenate: target + neighbors
+        u_concat = torch.cat([u_target, u_nei_emb.view(u_target.size(0), -1)], dim=-1)
+        i_concat = torch.cat([i_target, i_nei_emb.view(i_target.size(0), -1)], dim=-1)
 
-        i_out, _ = self.item_attn(
-            query=i_seq, key=i_seq, value=i_seq,
-            key_padding_mask=i_pad,
-        )  # [batch, 1+k, emb_dim]
-        i_context = i_out[:, 0, :]  # 取target位置的输出
+        # Final concat for MLP
+        mlp_input = torch.cat([u_concat, i_concat], dim=-1)  # [batch, 2*(k+1)*emb_dim]
+        hidden = self.mlp(mlp_input)
+        pred = self.predict_layer(hidden).squeeze(-1)
+        pred = pred + self.user_bias(user).squeeze(-1) + self.item_bias(item).squeeze(-1)
 
-        # Concat → MLP (Step d)
-        mlp_input = torch.cat([u_context, i_context], dim=-1)  # [batch, 2*emb_dim]
-        return self.mlp(mlp_input).squeeze(-1)
+        # ===== 调试 =====
+        if not self.debug_done:
+            print(f"[Debug NeighborAware] u_nei_ids shape: {u_nei_ids.shape}")
+            print(f"[Debug NeighborAware] u_nei_ids[0]: {u_nei_ids[0]}")
+            print(f"[Debug NeighborAware] u_nei_emb[0] mean: {u_nei_emb[0].mean().item():.4f}")
+            print(f"[Debug NeighborAware] u_target mean: {u_target.mean().item():.4f}")
+            self.debug_done = True
+
+        return pred

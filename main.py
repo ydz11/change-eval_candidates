@@ -54,18 +54,19 @@ NUM_NEG_EVAL = 99
 RATING_THRESHOLD = 4
 
 # Cold-start filtering thresholds
-MIN_USER_INTERACTIONS = 5
+MIN_USER_INTERACTIONS = 10
 MIN_ITEM_INTERACTIONS = 5
 
 # =============================================================
 # GridSearch hyperparameter grid
 # =============================================================
 GRID = {
-    "factor":         [16, 32, 64],
+    "factor":         [32],
     "lr":             [1e-3],
     "weight_decay":   [1e-5],
-    "dropout":        [0.2, 0.5],
+    "dropout":        [0.2],
     "sasrec_num_neg": [1],
+    "neighbor_k": [3, 5, 10],
 }
 
 
@@ -73,13 +74,17 @@ GRID = {
 # Training function
 # =============================================================
 
-def train_rating_model(model, train_dataset, valid_users, valid_candidates,
+def train_rating_model(model, train_dataset, valid_rating_dataset,
+                       valid_users, valid_candidates,
                        model_name, lr=LR, weight_decay=WEIGHT_DECAY):
     model = model.to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = torch.nn.MSELoss()
 
-    best_ndcg = -1.0
+    best_val_mse = float('inf')
+    valid_rating_loader = DataLoader(valid_rating_dataset,
+                                     batch_size=TRAIN_BATCH_SIZE,
+                                     shuffle=False)
     best_state = None
     no_improve = 0
 
@@ -111,8 +116,14 @@ def train_rating_model(model, train_dataset, valid_users, valid_candidates,
               f"valid_hr@{TOP_K}={hr:.4f}, "
               f"valid_ndcg@{TOP_K}={ndcg:.4f}")
 
-        if ndcg > best_ndcg:
-            best_ndcg = ndcg
+        model.eval()
+        with torch.no_grad():
+            val_losses = [loss_fn(model(u.to(DEVICE), i.to(DEVICE)), r.to(DEVICE)).item()
+                          for u, i, r in valid_rating_loader]
+        val_mse = float(np.mean(val_losses))
+
+        if val_mse < best_val_mse:
+            best_val_mse = val_mse
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve = 0
         else:
@@ -122,7 +133,7 @@ def train_rating_model(model, train_dataset, valid_users, valid_candidates,
                 break
 
     model.load_state_dict(best_state)
-    return model
+    return model, best_val_mse
 
 
 # =============================================================
@@ -208,6 +219,7 @@ def main():
 
     # Training dataset: use ALL observed ratings (no random neg sampling)
     train_dataset = RatingTrainDataset(train_df)
+    valid_rating_dataset = RatingTrainDataset(valid_df)
 
     # user_history: ordered item sequence per user from training (for SASRec)
     user_history = {}
@@ -223,7 +235,7 @@ def main():
         train_uir=train_uir[:, :3].astype(np.float32),
         n_users=n_users,
         n_items=n_items,
-        k=NEIGHBOR_K,
+        k=max(GRID["neighbor_k"]),
         sim_threshold=-1.0,
     )
 
@@ -316,7 +328,7 @@ def main():
 
             "NeighborAware": NeighborAware(
                 user_emb, item_emb, user_neighbors, item_neighbors,
-                n_users, n_items, k=NEIGHBOR_K,
+                n_users, n_items, k=config["neighbor_k"],
                 freeze_pretrained=False, dropout=dropout,
             ),
         }
@@ -324,9 +336,10 @@ def main():
         # --- Train all models ---
         for name, model in models.items():
             print(f"\n--- Training {name} (config {config_idx}) ---")
-            trained_model = train_rating_model(
+            trained_model, val_mse = train_rating_model(
                 model=model,
                 train_dataset=train_dataset,
+                valid_rating_dataset=valid_rating_dataset,
                 valid_users=valid_users,
                 valid_candidates=valid_candidates,
                 model_name=f"{name}-cfg{config_idx}",
@@ -346,6 +359,7 @@ def main():
                 "config_idx": config_idx,
                 "model": name,
                 **config,
+                "valid_mse": val_mse,
                 "valid_hr": valid_hr,
                 "valid_ndcg": valid_ndcg,
                 "test_hr": test_hr,
@@ -354,7 +368,7 @@ def main():
             all_tuning_results.append(result_row)
 
             # Track best config per model (by validation NDCG)
-            if name not in best_per_model or valid_ndcg > best_per_model[name]["valid_ndcg"]:
+            if name not in best_per_model or val_mse < best_per_model[name]["valid_mse"]:
                 best_per_model[name] = result_row.copy()
 
             print(f"  {name:15s}  valid_hr@{TOP_K}={valid_hr:.4f}  "
